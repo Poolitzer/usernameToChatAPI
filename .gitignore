@@ -5,4 +5,5 @@ venv
 api_keys.py
 log.log
 *.session
+*.session-journal
 cache.json
