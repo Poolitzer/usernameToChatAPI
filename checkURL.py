@@ -37,7 +37,7 @@ async def check_url(
         if request.rel_url.query["api_key"] not in ALLOWED_KEYS:
             error_string = "Unauthorized"
             return web.json_response(
-                data=create_error_response(401, error_string), status=400
+                data=create_error_response(401, error_string), status=401
             )
     # this function call increases a counter for how many requests each api key did
     await increase_counter(request.rel_url.query["api_key"])

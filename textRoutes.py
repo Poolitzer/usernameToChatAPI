@@ -40,7 +40,8 @@ async def api_documentation(request):
         "\n\nThe successful call will result in a json response, mimicking the getChat response from "
         "the telegram API for the respective types: https://core.telegram.org/bots/api#chat. Bio/description are "
         "passed if present as well. Photo is not passed, this wouldn't make sense.\n\nError handling is the same as "
-        "telegram does it. Expected errors are 400, when the chat is not found, and 429, if the API is hit with a "
+        "telegram does it. Expected errors are 400, when the chat is not found or parameters are missing, 401, when "
+        "the API key is wrong, and 429, if the API is hit with a "
         "flood wait error. The retry_after attribute is present in this case so you can wait that long before making "
         "more requests."
     )
