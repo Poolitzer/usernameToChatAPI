@@ -1,0 +1,8 @@
+venv
+.idea
+
+# these are files which are changed on a per instance basis, no need to track them in the repo
+api_keys.py
+log.log
+*.session
+cache.json
