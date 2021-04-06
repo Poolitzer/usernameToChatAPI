@@ -9,6 +9,8 @@ from api_keys import ALLOWED_KEYS
 
 # this module is used to do some (for the time being quite intense) logging to a telegram channel
 
+LOG_ID = 1488052888
+
 
 async def log_call(
     client: TelegramClient, username="", rg_traceback="", fw_traceback=""
@@ -35,7 +37,7 @@ async def log_call(
             + "```"
         )
     # this gets send to a channel
-    await client.send_message(1488052888, string_to_send)
+    await client.send_message(LOG_ID, string_to_send)
 
 
 # this counter is used to save how many calls are being done per API call
@@ -63,7 +65,7 @@ async def send_counter(client: TelegramClient) -> None:
         # nice bye here
         string_to_send += "\nSee you again in an hour :)"
         # sending it
-        await client.send_message(1488052888, string_to_send)
+        await client.send_message(LOG_ID, string_to_send)
         # clearing the dict so we dont count twice
         counter.clear()
         # and sleeping for an hour
@@ -106,7 +108,7 @@ def exception_decorator(func):
                 f" `{e.__repr__()}`, the traceback:\n```" + tb_string + "```"
             )
             # sending it
-            await client.send_message(1488052888, string_to_send)
+            await client.send_message(LOG_ID, string_to_send)
             # and writing it to our logfile
             raise
 

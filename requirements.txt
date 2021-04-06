@@ -1,0 +1,4 @@
+Telethon
+ujson
+aiohttp
+beautifulsoup4
