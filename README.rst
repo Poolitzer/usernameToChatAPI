@@ -7,6 +7,8 @@ for the API itself lies in textRoutes.
 
 This project is very much in an early alpha phase and should not be used in production.
 
+A running instance can be found at https://usernameToChatAPI.de
+
 =====================
 Run your own instance
 =====================
