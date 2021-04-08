@@ -1,19 +1,16 @@
 from aiohttp import web
 
+# these functions just return strings. It might make sense to move them to their own folder later and turn them to plain
+# html files.
+
 
 async def index(request: web.Request):
-    if request.url.host == "localhost":
-        owner_insert = (
-            "Since you discovered this text on the https://usernameToChat.de domain, https://t.me/poolitzer (me \o/) "
-            "is/am the owner of this instance. I am willing to give you a key, just PM me on Telegram, tell me how "
-            "many requests per time you are going to do roughly and I will see how it fits in the correct project "
-            "utilisation."
-        )
-    else:
-        owner_insert = (
-            "Sadly, the owner of this instance did not configure this part of the project correctly, so "
-            "this text can not help you obtain a key, sorry."
-        )
+    owner_insert = (
+        "Since you discovered this text on the https://usernameToChatAPI.de domain, https://t.me/poolitzer (me \o/)"
+        " is/am the owner of this instance. I am willing to give you a key, just PM me on Telegram, tell me how "
+        "many requests per time you are going to do roughly and I will see how it fits in the correct project "
+        "utilisation."
+    )
     string = (
         "Hello there.\n\nYou stumbled over a running instance of the usernameToChatAPI project. The purpose of this "
         "API "
@@ -26,12 +23,12 @@ async def index(request: web.Request):
         f"documentation for this API.\n\nThe great python-telegram-bot library has a contrib submodule, "
         f"which provides a "
         f"neat integration of this API in the library. Check it out at https://github.com/python-telegram-bot/"
-        f"ptbcontrib/tree/main/ptbcontrib/userToChatAPI."
+        f"ptbcontrib/tree/main/ptbcontrib/username_to_chat_api."
     )
     return web.Response(text=string)
 
 
-async def api_documentation(request):
+async def api_documentation(_: web.Request):
     string = (
         "This document represents the whole documentation of the usernameToChatAPI.\n\nThere is currently one "
         "supported GET request: resolveUsername. This method takes two parameters, api_key and username. Submit them "
