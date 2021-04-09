@@ -6,7 +6,7 @@ from aiohttp import web
 
 async def index(request: web.Request):
     owner_insert = (
-        "Since you discovered this text on the https://usernameToChatAPI.de domain, https://t.me/poolitzer (me \o/)"
+        "Since you discovered this text on the https://usernameToChatAPI.de URL, https://t.me/poolitzer (me \o/)"
         " is/am the owner of this instance. I am willing to give you a key, just PM me on Telegram, tell me how "
         "many requests per time you are going to do roughly and I will see how it fits in the correct project "
         "utilisation."
