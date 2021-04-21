@@ -44,14 +44,14 @@ async def log_call(
 counter = {}
 
 
-async def increase_counter(api_key: str) -> None:
+async def increase_counter(api_key: str, call_type: str) -> None:
     # here the name gets taken from the allowed keys dict
     name = ALLOWED_KEYS[api_key]
     # if its not present in the dict, add it here
     if name not in counter:
-        counter[name] = 0
+        counter[name] = {"cache": 0, "api_call": 0}
     # increase the counter, so it happened once more
-    counter[name] += 1
+    counter[name][call_type] += 1
 
 
 async def send_counter(client: TelegramClient) -> None:
@@ -61,7 +61,7 @@ async def send_counter(client: TelegramClient) -> None:
         string_to_send = "This time, the following bots used these many calls:\n\n"
         # we append the counter per api key
         for name in counter:
-            string_to_send += f"• {name}: {counter[name]}\n"
+            string_to_send += f"• {name} -  Cache: {counter[name]['cache']}, API calls: {counter[name]['api_call']}\n"
         # nice bye here
         string_to_send += "\nSee you again in an hour :)"
         # sending it

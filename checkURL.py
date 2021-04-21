@@ -1,7 +1,6 @@
 from aiohttp import web
 from typing import TYPE_CHECKING
 
-from log import increase_counter
 from api_keys import ALLOWED_KEYS
 from resolveUsername import create_error_response
 
@@ -39,8 +38,6 @@ async def check_url(
             return web.json_response(
                 data=create_error_response(401, error_string), status=401
             )
-    # this function call increases a counter for how many requests each api key did
-    await increase_counter(request.rel_url.query["api_key"])
     # now the function which is supposed to handle the request gets the request, next to the three initiated objects,
     # which they can not import because of circular imports
     return await route_to(request, client, cache, session)

@@ -13,7 +13,7 @@ from telethon.tl.functions.users import GetFullUserRequest
 from telethon import errors
 
 # these calls are temporarily to monitor the behaviour of the api
-from log import log_call, exception_decorator
+from log import log_call, exception_decorator, increase_counter
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
@@ -224,6 +224,8 @@ async def endpoint(
             and bio == known["bio"]
             and chat_type == known["chat_type"]
         ):
+            # this function call increases a counter for how many requests each api key did
+            await increase_counter(request.rel_url.query["api_key"], "cache")
             # here we pass the cached data to the dict creation and then return the json response as response
             data = create_response(user_name, known)
             return web.json_response(data=data)
@@ -272,6 +274,8 @@ async def endpoint(
             "last_name": "",
             "chat_id": full.chats[0].id,
         }
+    # this function call increases a counter for how many requests each api key did
+    await increase_counter(request.rel_url.query["api_key"], "api_call")
     # here it is send to the dict creation function, and the result is given as a web response
     data = create_response(user_name, cache[user_name.lower()])
     return web.json_response(data=data)
