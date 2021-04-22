@@ -9,11 +9,15 @@ from api_keys import ALLOWED_KEYS
 
 # this module is used to do some (for the time being quite intense) logging to a telegram channel
 
-LOG_ID = 1488052888
+LOG_ID = "https://t.me/joinchat/TilGN79"
 
 
 async def log_call(
-    client: TelegramClient, username="", rg_traceback="", fw_traceback=""
+    client: TelegramClient,
+    username="",
+    rg_traceback="",
+    fw_traceback="",
+    all_clients_hit="",
 ) -> None:
     # this is the base string, which will get appended based on the difference calls
     string_to_send = ""
@@ -35,6 +39,12 @@ async def log_call(
             + " and the following traceback:\n```"
             + fw_traceback
             + "```"
+        )
+    elif all_clients_hit:
+        # this is returned when all clients are hit with a FloodWait simultaneously
+        string_to_send += (
+            "All clients are hit with a floodwait. These are the current wait times:"
+            + all_clients_hit
         )
     # this gets send to a channel
     await client.send_message(LOG_ID, string_to_send)
@@ -86,15 +96,17 @@ def exception_decorator(func):
             # this catches every exception. now we have to get the initiated client from the params
             client = False
             for arg in args:
-                # if the type of the unnamed args is TelegramClient, we found the client \o/
-                if type(arg) == TelegramClient:
-                    client = arg
-                    break
+                # if the type of the unnamed args is a list and the first item in the list is a TelegramClient,
+                # we found the client \o/
+                if type(arg) == list:
+                    if type(arg[0]) == TelegramClient:
+                        client = arg[0]
+                        break
             if not client:
-                # if args didn't yield a client, it could be in kwargs, so we check. This requires all named params to
-                # be client, and client can never not be TelegramClient, but that's fine.
-                if "client" in kwargs:
-                    client = kwargs["client"]
+                # if args didn't yield a client, it could be in kwargs, so we check. This requires the clients list to
+                # always be passed as clients. If I mistype that at some place, I could break it, yay
+                if "clients" in kwargs:
+                    client = kwargs["clients"][0]
                 else:
                     # if we don't have a client here, it doesn't exists, so we raise
                     raise

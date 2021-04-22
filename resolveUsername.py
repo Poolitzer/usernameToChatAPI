@@ -5,7 +5,7 @@ from typing import Generator, TypedDict, TYPE_CHECKING
 import sys
 import asyncio
 
-from aiohttp import web
+from aiohttp import web, web_response
 from bs4 import BeautifulSoup
 from bs4.element import Tag, NavigableString
 from telethon.tl.functions.channels import GetFullChannelRequest
@@ -162,24 +162,33 @@ def create_error_response(code, description, retry_after=None):
 @exception_decorator
 async def endpoint(
     request: web.Request,
-    client: "TelegramClient",
+    clients: "list[TelegramClient]",
     cache: "MutableMapping[str, Username]",
     session: "ClientSession",
 ) -> web.Response:
-    # noinspection PyUnresolvedReferences
-    # the above line is so PyCharm doesn't complain over a valid access. We use the filename as a unique
-    # name for the client, which should make it easy to add more clients in the future
-    client_name = client.session.filename
-    if client_name in flood_wait:
-        if flood_wait[client_name]:
-            # this logic is True as long as we are hit by a flood wait with the specific client. Currently, this timer
+    # this is just here so mypy is happy. It could stay as the first client, but could change later, that happens in the
+    # for loop
+    # this client variable will be set to the client if they aren't all hit with a flood error
+    client: "TelegramClient" = clients[0]
+    # from the available clients, we select one
+    for potential_client in clients:
+        # noinspection PyUnresolvedReferences
+        # the above line is so PyCharm doesn't complain over a valid access. We use the filename as a unique
+        # name for the client, which should make it easy to add more clients in the future
+        client_name = potential_client.session.filename
+        # this checks if the client is not in flood wait, then we select it
+        if client_name not in flood_wait:
+            client = potential_client
+            break
+        elif potential_client == clients[-1]:
+            # this logic is True if all clients are hit by a floodwait error. Currently, this timer
             # is updated every second, so we are not missing time. Depending on the limits we hit and the strain this
             # countdown (especially with several clients) puts on our system we might need to change this. The logic
             # behind this is good though: The client_name is set to False if no flood, or a number if its flood
-            # the response mimicks telegrams error responses
+            # the response mimics telegrams error responses. We pass the lowest floodwait as error.
             return web.json_response(
                 data=create_error_response(
-                    429, "Telegram forces us to wait", flood_wait[client_name]
+                    429, "Telegram forces us to wait", flood_wait[min(flood_wait)]
                 ),
                 status=429,
             )
@@ -204,7 +213,7 @@ async def endpoint(
         # list of strings rather than a single string, so we have to join them together.
         tb_list = traceback.format_tb(sys.exc_info()[2])
         tb_string = "".join(tb_list)
-        await log_call(client, user_name, rg_traceback=tb_string)
+        await log_call(clients[0], user_name, rg_traceback=tb_string)
         # this gives the error to the user the same way telegram does
         return web.json_response(
             data=create_error_response(400, "Bad Request: chat not found"), status=400
@@ -230,53 +239,18 @@ async def endpoint(
             data = create_response(user_name, known)
             return web.json_response(data=data)
     # if we reached this part of the code, we either don't have cached values, or they are out of date. So we get new
-    # ones from telegram at this point. These are two different requests for Users or Chats with our userbot.
-    if chat_type == "private":
-        try:
-            # noinspection PyTypeChecker
-            # the above line is so PyCharm doesn't complain about user_name being the username, telethon is totally fine
-            # with this. We have to get the full user/chat in order to get the bio of the chat
-            full = await client(GetFullUserRequest(user_name))
-        except errors.FloodWaitError as e:
-            # since we have to do the exact same logic for the non private chat, I moved it to it's own function, see
-            # below
-            await flood_error_log(client, user_name, e)
-            # The initial flood error, this gives a telegram like error to the user
-            return web.json_response(
-                create_error_response(429, "Telegram forces us to wait", e.seconds),
-                status=429,
-            )
-        # and we write it to the cache. We loose capitalization of the username here, but that doesn't matter, since
-        # they are case insensitive. We always return the username they put in the URL anyway.
-        cache[user_name.lower()] = {
-            "first_name": full.user.first_name,
-            "last_name": full.user.last_name,
-            "bio": full.about,
-            "chat_type": chat_type,
-            "chat_id": full.user.id,
-        }
-    else:
-        try:
-            # noinspection PyTypeChecker
-            # same as above, just a slightly different api call, and we don't have a last_name, so we set it to an empty
-            # string
-            full = await client(GetFullChannelRequest(user_name))
-        except errors.FloodWaitError as e:
-            await flood_error_log(client, user_name, e)
-            return web.json_response(
-                create_error_response(429, "Telegram forces us to wait", e.seconds),
-                status=429,
-            )
-        cache[user_name.lower()] = {
-            "first_name": full.chats[0].title,
-            "bio": full.full_chat.about,
-            "chat_type": chat_type,
-            "last_name": "",
-            "chat_id": full.chats[0].id,
-        }
+    # ones from telegram at this point. This is its own function because we need it to be recursive to switch clients
+    potential_error = await get_chat_from_api(
+        client, chat_type, user_name, clients, cache
+    )
+    # a floodwait response could be returned so we check for it here
+    if type(potential_error) == web_response.Response:
+        # this needs to be returned to the server so we return
+        return potential_error
     # this function call increases a counter for how many requests each api key did
     await increase_counter(request.rel_url.query["api_key"], "api_call")
-    # here it is send to the dict creation function, and the result is given as a web response
+    # here it is send to the dict creation function, and the result is given as a web response. Getting it from cache
+    # might be a bit resource wasting, but this is python, so who cares
     data = create_response(user_name, cache[user_name.lower()])
     return web.json_response(data=data)
 
@@ -284,18 +258,83 @@ async def endpoint(
 async def flood_runs_out(client: str) -> None:
     # this is the countdown to update the flood wait time. It is set to one second right now, this can be
     # changed/made smarter later.
-    while True:
-        await asyncio.sleep(1)
+    while flood_wait[client] >= 0:
+        await asyncio.sleep(10)
         # subtracting one second from the time we have to wait because we slept one second
-        flood_wait[client] -= 1
-        # if its 0, we set it to false, and then break the loop.
-        if flood_wait[client] == 0:
-            flood_wait[client] = False
-            break
+        flood_wait[client] -= 10
+    # if wait is 0 or less, we set it to false, and then break the loop.
+    del flood_wait[client]
 
 
-async def flood_error_log(
-    client: "TelegramClient", user_name: str, e: errors.FloodWaitError
+async def get_chat_from_api(
+    client: "TelegramClient",
+    chat_type: str,
+    user_name: str,
+    clients: "list[TelegramClient]",
+    cache: "MutableMapping[str, Username]",
+):
+    # this whole function is recursive. It will call itself if one client reaches a FloodWaitError
+    try:
+        if chat_type == "private":
+            # noinspection PyTypeChecker
+            # the above line is so PyCharm doesn't complain about user_name being the username, telethon is totally fine
+            # with this. We have to get the full user/chat in order to get the bio of the chat
+            full = await client(GetFullUserRequest(user_name))
+        else:
+            # noinspection PyTypeChecker
+            # same as above, just a slightly different api call
+            full = await client(GetFullChannelRequest(user_name))
+    except errors.FloodWaitError as e:
+        # now we can check if there are other clients left we can try
+        # since we have to do the exact same logic for the non private chat, I moved it to it's own function, see
+        # below
+        await flood_error(client, user_name, e, clients)
+        # now we can check if there are more clients available to instead do the function call
+        # how this for loop works, see above
+        for potential_client in clients:
+            # noinspection PyUnresolvedReferences
+            client_name = potential_client.session.filename
+            # this checks if the client is not in flood wait, then we select it
+            print(flood_wait)
+            if client_name not in flood_wait:
+                return await get_chat_from_api(
+                    potential_client, chat_type, user_name, clients, cache
+                )
+        # If we reached this part of the code, it means all clients are sadly hit with a FloodWait. We return the lowest
+        # and go on with our life
+        # this also resolves in a specific log call
+        await log_call(clients[0], user_name, all_clients_hit=str(flood_wait))
+        return web.json_response(
+            create_error_response(429, "Telegram forces us to wait", e.seconds),
+            status=429,
+        )
+    # and we write it to the cache. We loose capitalization of the username here, but that doesn't matter, since
+    # they are case insensitive. We always return the username they put in the URL anyway
+    if chat_type == "private":
+        cache[user_name.lower()] = {
+            "first_name": full.user.first_name,
+            "last_name": full.user.last_name,
+            "bio": full.about,
+            "chat_type": chat_type,
+            "chat_id": full.user.id,
+        }
+    # we don't have a last_name in other chats, so we set it to an empty string. Also, the return type is slightly
+    # different
+    else:
+        cache[user_name.lower()] = {
+            "first_name": full.chats[0].title,
+            "last_name": "",
+            "bio": full.full_chat.about,
+            "chat_type": chat_type,
+            "chat_id": full.chats[0].id,
+        }
+
+
+async def flood_error(
+    client: "TelegramClient",
+    user_name: str,
+    e: errors.FloodWaitError,
+    clients: "list[TelegramClient]",
 ):
     # noinspection PyUnresolvedReferences
     # again, the above line is so PyCharm doesn't complain over a valid access. We use the filename as a unique
@@ -311,4 +350,4 @@ async def flood_error_log(
     tb_string = "".join(tb_list)
     # we add the seconds we wait for so we can make decisions based on this
     tb_string += "\n\nWaiting for " + str(e.seconds) + " seconds."
-    await log_call(client, user_name, fw_traceback=tb_string)
+    await log_call(clients[0], user_name, fw_traceback=tb_string)

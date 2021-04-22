@@ -20,8 +20,17 @@ import logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", filename="log.log"
 )
-# This will be used to make requests to telegram's API
-client = TelegramClient("session_0", api_id, api_hash)
+# this is the amounts of clients you want to initialize. The higher, the more you can migiate flood wait, because the
+# code will switch to the next
+CLIENTS = 1
+# x will be used to get up to client
+x = 0
+# This will be used to make requests to telegram's API. We throw the clients in a list
+clients: list[TelegramClient] = []
+# in this loop we add the unique clients to the dict
+while x != CLIENTS:
+    clients.append(TelegramClient("session_" + str(x), api_id, api_hash))
+    x += 1
 
 
 # This is the type hinted layout of the temp storage, so mypy can use this to do its type checking
@@ -73,7 +82,7 @@ app.router.add_get(
         check_url,
         expected_parameters=["api_key", "username"],
         route_to=endpoint,
-        client=client,
+        clients=clients,
         cache=cache,
         session=session,
     ),
@@ -92,9 +101,10 @@ site = web.TCPSite(runner, host="localhost", port=1234)
 # and here the site gets started
 loop.run_until_complete(site.start())
 # this connects the client to telegram
-loop.run_until_complete(client.connect())
+for c_client in clients:
+    c_client.start()
 # this task sends a log for how many calls each api key did, every now and then (an hour right now
-loop.create_task(send_counter(client))
+loop.create_task(send_counter(clients[0]))
 # the save task gets created here
 loop.create_task(save())
 # and this is the final call which runs forever.

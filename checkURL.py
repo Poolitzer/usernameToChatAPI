@@ -16,9 +16,9 @@ if TYPE_CHECKING:
 async def check_url(
     request: web.Request,
     expected_parameters: list,
-    route_to: "Callable[[web.Request, TelegramClient, Mapping[str, Username], ClientSession],"
+    route_to: "Callable[[web.Request, list[TelegramClient], Mapping[str, Username], ClientSession],"
     "Awaitable[web.Response]]",
-    client: "TelegramClient",
+    clients: "list[TelegramClient]",
     cache: "Mapping[str, Username]",
     session: "ClientSession",
 ) -> web.Response:
@@ -40,4 +40,4 @@ async def check_url(
             )
     # now the function which is supposed to handle the request gets the request, next to the three initiated objects,
     # which they can not import because of circular imports
-    return await route_to(request, client, cache, session)
+    return await route_to(request, clients, cache, session)
