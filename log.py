@@ -18,6 +18,7 @@ async def log_call(
     rg_traceback="",
     fw_traceback="",
     all_clients_hit="",
+    username_not_found="",
 ) -> None:
     # this is the base string, which will get appended based on the difference calls
     string_to_send = ""
@@ -45,6 +46,12 @@ async def log_call(
         string_to_send += (
             "All clients are hit with a floodwait. These are the current wait times:"
             + all_clients_hit
+        )
+    elif username_not_found:
+        # this happens when the api cant resolve the username
+        string_to_send += (
+            "This username was resolved by the API but doesn't exist. "
+            + username_not_found
         )
     # this gets send to a channel
     await client.send_message(LOG_ID, string_to_send)

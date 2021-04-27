@@ -18,11 +18,17 @@ from log import log_call, exception_decorator, increase_counter
 if TYPE_CHECKING:
     from aiohttp import ClientSession
     from telethon import TelegramClient
-    from typing import Tuple, Union, Literal, MutableMapping
+    from typing import Tuple, Union, Literal, MutableMapping, Mapping
 
     from main import Username
 
+# this is a dictionary which will hold clients which are in a floodwait, so we can use other ones
 flood_wait: "MutableMapping[str, Union[bool, int]]" = {}
+
+# usernames which are banned on iOS devices but actual fine chats. the website might not work for them, so I hardcode
+# them here when I encounter them and do not try the website for them later on. I have to map the names to their chat
+# type because otherwise we get the type from the website
+COPYRIGHT_USERNAMES: "Mapping[str, str]" = {"utubebot": "private"}
 
 
 class RegexFailedError(Exception):
@@ -203,42 +209,52 @@ async def endpoint(
     if user_name.lower() in cache:
         # setting it to lower avoids issues with the case
         known = cache[user_name.lower()]
-    # this subscribes the tuple result to three unique variables
-    try:
-        names, bio, chat_type = await website(user_name, session=session)
-    except RegexFailedError:
-        # if that error is raised, this means the username is invalid (or so I hope), so we raise a BadRequest error
-        # for now, we also log this (and the traceback) to a channel so we can do close monitoring for now
-        # traceback.format_tb returns the usual python message about an exception, but as a
-        # list of strings rather than a single string, so we have to join them together.
-        tb_list = traceback.format_tb(sys.exc_info()[2])
-        tb_string = "".join(tb_list)
-        await log_call(clients[0], user_name, rg_traceback=tb_string)
-        # this gives the error to the user the same way telegram does
-        return web.json_response(
-            data=create_error_response(400, "Bad Request: chat not found"), status=400
-        )
-    # known is set to the cached data, so if we have data here, we can use it
-    if known:
-        known_names = known["first_name"]
-        # names is the result of the website. it combines first and last name from a user with a space, so we do it here
-        # as well. for chats, we have their title set as first_name and no last_name/space issue
-        if known["last_name"]:
-            known_names += " " + known["last_name"]
-        # if all three properties are the same, we assume the chat_id is as well, and use our cached values. This could
-        # lead to an issue if only the id changes, but all other properties stay the same. This will be closely
-        # monitored for the time being. But using the cache should avoid hitting the flood wait
-        if (
-            names == known_names
-            and bio == known["bio"]
-            and chat_type == known["chat_type"]
-        ):
-            # this function call increases a counter for how many requests each api key did
-            await increase_counter(request.rel_url.query["api_key"], "cache")
-            # here we pass the cached data to the dict creation and then return the json response as response
-            data = create_response(user_name, known)
-            return web.json_response(data=data)
-    # if we reached this part of the code, we either don't have cached values, or they are out of date. So we get new
+    # this check does not try to parse websites for usernames which exist but generate a wrong website.
+    if user_name.lower() not in COPYRIGHT_USERNAMES:
+        # this subscribes the tuple result to three unique variables
+        try:
+            names, bio, chat_type = await website(user_name, session=session)
+        except RegexFailedError:
+            # if that error is raised, this means the username is invalid (or so I hope), so we raise a BadRequest
+            # error.
+            # we also log this (and the traceback) to a channel so we can do close monitoring for now
+            # traceback.format_tb returns the usual python message about an exception, but as a
+            # list of strings rather than a single string, so we have to join them together. We use the first client
+            # to log
+            # because that is the one which we require to be in the log chat
+            tb_list = traceback.format_tb(sys.exc_info()[2])
+            tb_string = "".join(tb_list)
+            await log_call(clients[0], user_name, rg_traceback=tb_string)
+            # this gives the error to the user the same way telegram does
+            return web.json_response(
+                data=create_error_response(400, "Bad Request: chat not found"),
+                status=400,
+            )
+        # known is set to the cached data, so if we have data here, we can use it
+        if known:
+            known_names = known["first_name"]
+            # names is the result of the website. it combines first and last name from a user with a space, so we
+            # do it here as well. for chats, we have their title set as first_name and no last_name/space issue
+            if known["last_name"]:
+                known_names += " " + known["last_name"]
+            # if all three properties are the same, we assume the chat_id is as well, and use our cached values. This
+            # could lead to an issue if only the id changes, but all other properties stay the same. This will be
+            # closely monitored for the time being. But using the cache should avoid hitting the flood wait too much
+            if (
+                names == known_names
+                and bio == known["bio"]
+                and chat_type == known["chat_type"]
+            ):
+                # this function call increases a counter for how many requests each api key did
+                await increase_counter(request.rel_url.query["api_key"], "cache")
+                # here we pass the cached data to the dict creation and then return the json response as response
+                data = create_response(user_name, known)
+                return web.json_response(data=data)
+    else:
+        # we set chat type from the hardcoded dict, because we need it to call the correct api method
+        chat_type = COPYRIGHT_USERNAMES[user_name.lower()]
+    # if we reached this part of the code, we either don't have cached values, or they are out of date, or we couldn't
+    # use the website to verify them. So we get new
     # ones from telegram at this point. This is its own function because we need it to be recursive to switch clients
     potential_error = await get_chat_from_api(
         client, chat_type, user_name, clients, cache
@@ -295,7 +311,6 @@ async def get_chat_from_api(
             # noinspection PyUnresolvedReferences
             client_name = potential_client.session.filename
             # this checks if the client is not in flood wait, then we select it
-            print(flood_wait)
             if client_name not in flood_wait:
                 return await get_chat_from_api(
                     potential_client, chat_type, user_name, clients, cache
@@ -307,6 +322,15 @@ async def get_chat_from_api(
         return web.json_response(
             create_error_response(429, "Telegram forces us to wait", e.seconds),
             status=429,
+        )
+    except ValueError as e:
+        # the ValueError happens when the API returns that the username is unknown. This could happen with the hardcoded
+        # values, or just with a very badly timed username change
+        await log_call(clients[0], user_name, username_not_found=e.args[0])
+        # we return the bad request to the user
+        return web.json_response(
+            data=create_error_response(400, "Bad Request: chat not found"),
+            status=400,
         )
     # and we write it to the cache. We loose capitalization of the username here, but that doesn't matter, since
     # they are case insensitive. We always return the username they put in the URL anyway
