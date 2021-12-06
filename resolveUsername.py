@@ -332,6 +332,21 @@ async def get_chat_from_api(
             data=create_error_response(400, "Bad Request: chat not found"),
             status=400,
         )
+    except TypeError as e:
+        # for some reasons, some channels show up as private chats from the website. if that happens, telegram throws
+        # a typeerror, so we expect it, change the type and call the function again. I would really like to do something
+        # about this, but I can't reproduce it
+        if chat_type == "private":
+            # it could also be a supergroup, I have no idea, I would rather say its something it isn't but still serve
+            # the id
+            return await get_chat_from_api(
+                client, "channel", user_name, clients, cache
+            )
+        else:
+            # this is luckily clear
+            return await get_chat_from_api(
+                client, "private", user_name, clients, cache
+            )
     # and we write it to the cache. We loose capitalization of the username here, but that doesn't matter, since
     # they are case insensitive. We always return the username they put in the URL anyway
     if chat_type == "private":
