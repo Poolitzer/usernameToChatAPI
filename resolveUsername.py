@@ -351,11 +351,11 @@ async def get_chat_from_api(
     # they are case insensitive. We always return the username they put in the URL anyway
     if chat_type == "private":
         cache[user_name.lower()] = {
-            "first_name": full.user.first_name,
-            "last_name": full.user.last_name,
-            "bio": full.about,
+            "first_name": full.users[0].first_name,
+            "last_name": full.users[0].last_name,
+            "bio": full.full_user.about,
             "chat_type": chat_type,
-            "chat_id": full.user.id,
+            "chat_id": full.users[0].id,
         }
     # we don't have a last_name in other chats, so we set it to an empty string. Also, the return type is slightly
     # different
